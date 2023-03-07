@@ -103,5 +103,4 @@ Backup(Freezer::Source2, Freezer::Destination2)
 
 __END__
 
-# rsync情報まとめ　参考 http://g86.dbcls.jp/~meso/meme/archives/3
 # Backup Bouncerで検証
