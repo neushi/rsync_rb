@@ -15,15 +15,16 @@ require "find"
 module Freezer
   # Source = ARGV[0]          #
   # Destination = ARGV[1]     #
-  Source1 = "s1".freeze
-  Destination1 = "d1".freeze
-  Source2 = "s2".freeze
-  Destination2 = "d2".freeze
+  Backup = "BACKUP_hokadetsukawanaiDirName".freeze
+  Source1 = "/Volumes/s1/".freeze
+  Destination1 = "/Volumes/s1_bak/backup_rsync".freeze
+#  Source2 = "s2".freeze
+#  Destination2 = "d2".freeze
 end
 Freezer.freeze
 
-def Backup(source, destination)
-  if (`rsync --version` !~ /rsync  version 2.6.9/) then
+def backup(source, destination)
+  if (`rsync --version` !~ /rsync  version 3.2.3/) then
     printf("%s : rsyncのversion が変わりました!\n", $0)
     exit
   end
@@ -31,25 +32,33 @@ def Backup(source, destination)
   source.freeze
   destination.freeze
   now = Time.now.strftime("%Y%m%d%H%M%S")
+  backup_dirs = %Q!#{Freezer::Backup}!
+  backup_dir_now = %Q!#{backup_dirs}/#{File.basename(source)}.#{now}.obsolete!
+  log_file_now = "#{File.basename(source)}.#{now}.log"
   cmd1 = ""
   ["rsync",
-     "--dry-run",
+  #   "--dry-run",
+    # "-c",    # 異同判別に、日付とサイズだけでなく、チェックサムも使用
      "-v",
      "--delete",
      "-aH",
-     # "-NA", # Ver.3.1.1
-     # "--fileflags", # Ver.3.1.1
-  #   "--xattrs",              # Ver.3.1.1では、finderコメントを変えても反映されない事がある(.DS_Storeはコピーされているのに)
-     # "--force-change", # Ver.3.1.1
+      "-NA", # Ver.3.1.1
+    "--fileflags", # Ver.3.1.1
+     "--xattrs",              # Ver.3.1.1では、finderコメントを変えても反映されない事がある(.DS_Storeはコピーされているのに)
+     "--force-change", # Ver.3.1.1
      "--exclude='.fseventsd'",
      "--exclude='.Spotlight-V100'",
      "--exclude='.DocumentRevisions-V100'",
-     "--exclude='.Trash'",
-     %Q!--exclude='#{File.basename(source)}.obsolete*'!,
-     %Q!--exclude='#{File.basename(source)}.*.log'!,
-     "--update",              # skip files that are newer on the receiver
+     "--exclude='.TemporaryItems'",
+   #  "--exclude='.Trash'",
+     "--exclude='.Trashes'",
+     %Q!--exclude='#{backup_dirs}'!,      
+     %Q!--backup-dir='#{backup_dir_now}'!,
+     %Q!--exclude='#{log_file_now}'!,
+     %Q!--log-file='#{destination}/#{log_file_now}'!,
+    # "--log-file-format='%o %h [%a] %m (%u) %f %l'",
+   #  "--update",              # skip files that are newer on the receiver
      "--backup",
-     %Q!--backup-dir='#{File.basename(source)}.obsolete#{now}'!,
      "--progress",
      "--human-readable",
      "-i",                    # output a change-summary for all updates
@@ -65,8 +74,6 @@ def Backup(source, destination)
      # "--info=skip", # Ver.3.1.1
      # "--info=stats3", # Ver.3.1.1
      # "--info=symsafe", # Ver.3.1.1
-     %Q!--log-file='#{destination}/#{File.basename(source)}.#{now}.log'!,
-    # "--log-file-format='%o %h [%a] %m (%u) %f %l'",
      %Q!'#{source}'!,
      %Q!'#{destination}'!,
   ].each {|i| cmd1 << (i + ' ') }
@@ -77,37 +84,41 @@ def Backup(source, destination)
   stdin.close    # または close_write
   Thread.fork{
     stderr.each do |l|
-      print ("stderr: " + l)
+      print l
     end
   }
+  stdout.each_line("\r") do |line|
+      print  line
+  end
   newerFiles = []
-  stdout.each_line("\r", true ) do |line|
-    print ("stdout: " + line)
-    line.each_line("\n") do |ln|
-      newerFiles.push ln if ln =~ /newer/
+  Find.find( destination + "/" + backup_dir_now) { | file |
+    next if (file == (destination + "/" + backup_dir_now) )
+    next if (file =~ %r!#{destination}/#{backup_dir_now}/#{File.basename(source)}.[0-9]{14}.log!)
+    next if File.directory?(file) 
+
+    deleted_file = file
+    updated_file = file.sub(destination + "/" + backup_dir_now , source.chop)
+    next unless File.exist?(updated_file)
+   #   p deleted_file
+    #  p updated_file 
+    newerFiles.push(file.sub(destination + "/" + backup_dir_now + "/", ""))  if  ( File.new(updated_file).mtime < File.new(deleted_file).mtime )
+  }
+
+  if 0 < newerFiles.size then
+    p "== 新しいファイルが削除されます ================================"
+    newerFiles.each do |line|
+      p line
     end
+    p "== 新しいファイルが削除されます ================================"
   end
-  p "=================================="
-  newerFiles.each do |line|
-    print line
-  end
-  p "=================================="
   printf("異常終了しました (%s)", wait_thr.value.exitstatus) if wait_thr.value.exitstatus != 0
+
 end
 
-newerFiles = []
-Find.find(root) { | file | 
-   sorce_file = 
-   deleted_file = 
-   newerFiles.push deleted_file if deleted_file is newer  
-}
-
-
 p "備忘 "+Freezer::Source1+" ＝＞ "+Freezer::Destination1
-p "備忘 "+Freezer::Source2+" ＝＞ "+Freezer::Destination2
-Backup(Freezer::Source1, Freezer::Destination1)
-Backup(Freezer::Source2, Freezer::Destination2)
-
+backup(Freezer::Source1, Freezer::Destination1)
+# p "備忘 "+Freezer::Source2+" ＝＞ "+Freezer::Destination2
+# Backup(Freezer::Source2, Freezer::Destination2)
 __END__
 
 # Backup Bouncerで検証
